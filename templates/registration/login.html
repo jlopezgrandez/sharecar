@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Iniciar Sesión - ShareCar{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center pt-4">
+    <div class="col-12 col-md-6 col-lg-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <div class="text-center mb-4">
+                    <div class="d-inline-flex p-3 bg-primary-subtle text-primary rounded-circle mb-2">
+                        <i class="bi bi-car-front-fill fs-2"></i>
+                    </div>
+                    <h3 class="fw-bold">Acceso ShareCar</h3>
+                    <p class="text-muted small">Introduce tus credenciales para acceder a tu cuadrante.</p>
+                </div>
+
+                {% if form.errors %}
+                <div class="alert alert-danger small py-2" role="alert">
+                    Usuario o contraseña incorrectos. Por favor, inténtalo de nuevo.
+                </div>
+                {% endif %}
+
+                <form method="post" action="{% url 'login' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Usuario:</label>
+                        <input type="text" name="username" class="form-control" autofocus required>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label small fw-semibold">Contraseña:</label>
+                        <input type="password" name="password" class="form-control" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+                        <i class="bi bi-box-arrow-in-right"></i> Entrar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

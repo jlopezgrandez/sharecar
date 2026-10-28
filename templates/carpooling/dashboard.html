@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}Cuadrante Semanal - ShareCar{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+        <h2 class="h3 fw-bold mb-1">
+            <i class="bi bi-calendar3-week text-primary"></i> Cuadrante de Compartición
+        </h2>
+        <p class="text-muted mb-0">Semana del <strong>{{ lunes|date:"d/m/Y" }}</strong> al <strong>{{ viernes|date:"d/m/Y" }}</strong></p>
+    </div>
+    
+    <div class="d-flex flex-wrap gap-2">
+        <div class="btn-group shadow-sm">
+            <a href="?semana={{ semana_anterior }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-chevron-left"></i> Anterior
+            </a>
+            <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary btn-sm">
+                Hoy
+            </a>
+            <a href="?semana={{ semana_siguiente }}" class="btn btn-outline-secondary btn-sm">
+                Siguiente <i class="bi bi-chevron-right"></i>
+            </a>
+        </div>
+
+        {% if user.is_authenticated %}
+        <form action="{% url 'generar_plan' %}" method="post" class="d-inline" onsubmit="return confirm('¿Deseas generar/recalcular el plan para esta semana con la disponibilidad actual?');">
+            {% csrf_token %}
+            <input type="hidden" name="semana" value="{{ lunes|date:'Y-m-d' }}">
+            <button type="submit" class="btn btn-success btn-sm shadow-sm">
+                <i class="bi bi-cpu"></i> {% if plan %}Recalcular Plan{% else %}Generar Plan Semanal{% endif %}
+            </button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Días de la semana -->
+<div class="row g-4 mb-5">
+    {% for dia in dias_semana %}
+    <div class="col-12 col-lg-6 col-xl-4">
+        <div class="card h-100 shadow-sm border-top border-4 border-primary">
+            <div class="card-header d-flex justify-content-between align-items-center py-3">
+                <div>
+                    <h5 class="mb-0 fw-bold">{{ dia.nombre_dia }}</h5>
+                    <small class="text-muted">{{ dia.fecha|date:"d/m/Y" }}</small>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-light text-dark border">
+                        <i class="bi bi-people-fill text-primary"></i> {{ dia.viajeros|length }} viajeros
+                    </span>
+                </div>
+            </div>
+
+            <div class="card-body">
+                {% if dia.asignacion and dia.asignacion.viajes_vehiculo.all %}
+                    <h6 class="text-uppercase text-muted fs-7 fw-bold mb-3">
+                        <i class="bi bi-car-front"></i> Vehículos Asignados ({{ dia.asignacion.total_coches }})
+                    </h6>
+
+                    <div class="d-flex flex-column gap-2">
+                        {% for viaje in dia.asignacion.viajes_vehiculo.all %}
+                        <div class="p-2 px-3 bg-white rounded border border-light-subtle shadow-sm d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="text-primary fs-5">
+                                    <i class="bi bi-steering-wheel"></i>
+                                </div>
+                                <div>
+                                    <div class="fw-bold text-dark lh-sm">
+                                        {{ viaje.conductor.get_full_name|default:viaje.conductor.username }}
+                                    </div>
+                                    <small class="text-muted">
+                                        {{ viaje.vehiculo.marca_modelo }}
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                                    {{ viaje.vehiculo.plazas_totales }} plazas
+                                </span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% elif dia.viajeros|length == 0 %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="bi bi-calendar-x fs-2 d-block mb-2"></i>
+                        No hay personas viajando este día (festivo / teletrabajo general).
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-hourglass-split fs-2 text-warning d-block mb-2"></i>
+                        <p class="text-muted mb-2 small">Aún no se ha generado la optimización para este día.</p>
+                        {% if user.is_authenticated %}
+                        <span class="badge bg-warning-subtle text-warning-emphasis">Pendiente de generar</span>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                {% if dia.ausentes %}
+                <div class="mt-4 pt-3 border-top">
+                    <small class="text-muted fw-semibold d-block mb-1">No viajan hoy ({{ dia.ausentes|length }}):</small>
+                    <div class="d-flex flex-wrap gap-1">
+                        {% for aus in dia.ausentes %}
+                        <span class="badge bg-secondary-subtle text-secondary small" title="{{ aus.get_motivo_ausencia_display }}">
+                            {{ aus.usuario.first_name|default:aus.usuario.username }} ({{ aus.get_motivo_ausencia_display|default:'Ausente' }})
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Tabla de Balance de Equidad Histórico -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <h5 class="mb-0 fw-bold">
+            <i class="bi bi-bar-chart-line text-primary"></i> Tabla de Equidad y Balance de Aportación
+        </h5>
+        <small class="text-muted">El algoritmo utiliza este histórico acumulado para priorizar quién pone el coche.</small>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Usuario</th>
+                    <th>Coche Registrado</th>
+                    <th class="text-center">Días Conducidos</th>
+                    <th class="text-center">Días Pasajero</th>
+                    <th class="text-center">Total Viajes</th>
+                    <th class="text-center">Ratio de Aportación</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for perf in perfiles %}
+                <tr>
+                    <td class="fw-semibold">
+                        <i class="bi bi-person-circle text-secondary me-1"></i>
+                        {{ perf.user.get_full_name|default:perf.user.username }}
+                    </td>
+                    <td>
+                        {% if perf.vehiculo_activo %}
+                            <span class="badge bg-success-subtle text-success-emphasis border">
+                                {{ perf.vehiculo_activo.marca_modelo }} ({{ perf.vehiculo_activo.plazas_totales }}p)
+                            </span>
+                        {% else %}
+                            <span class="badge bg-light text-muted border">Sin coche / Pasajero</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center fw-bold text-primary">{{ perf.dias_conducidos }}</td>
+                    <td class="text-center text-muted">{{ perf.dias_pasajero }}</td>
+                    <td class="text-center">{{ perf.dias_totales }}</td>
+                    <td class="text-center">
+                        <div class="progress" style="height: 18px;" title="{{ perf.ratio_aportacion|floatformat:2 }}">
+                            <div class="progress-bar bg-primary" role="progressbar" 
+                                 style="width: {% widthratio perf.dias_conducidos perf.dias_totales 100 %}%;">
+                                {% widthratio perf.dias_conducidos perf.dias_totales 100 %}%
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-3">No hay perfiles de usuarios registrados aún.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

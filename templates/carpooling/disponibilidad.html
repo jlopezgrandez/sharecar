@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Mi Disponibilidad Semanal - ShareCar{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h2 class="h3 fw-bold mb-1">
+                    <i class="bi bi-calendar-check text-primary"></i> Mi Disponibilidad Semanal
+                </h2>
+                <p class="text-muted mb-0">Indica qué días asistirás y si tienes disponibilidad para conducir.</p>
+            </div>
+            <div>
+                <span class="badge bg-light text-dark border p-2">
+                    Semana: <strong>{{ lunes|date:"d/m/Y" }}</strong> - <strong>{{ viernes|date:"d/m/Y" }}</strong>
+                </span>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body p-4">
+                <div class="alert alert-info d-flex align-items-center gap-2 mb-4" role="alert">
+                    <i class="bi bi-info-circle-fill fs-5"></i>
+                    <div>
+                        <strong>Recordatorio:</strong> Por favor, marca tus ausencias (vacaciones, teletrabajo o citas médicas) antes del viernes previo a la planificación semanal.
+                    </div>
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="d-flex flex-column gap-3 mb-4">
+                        {% for item in dias_form %}
+                        <div class="p-3 border rounded-3 bg-white hover-shadow transition">
+                            <div class="row align-items-center g-3">
+                                <div class="col-12 col-md-3">
+                                    <h5 class="mb-0 fw-bold">{{ item.nombre_dia }}</h5>
+                                    <small class="text-muted">{{ item.fecha|date:"d/m/Y" }}</small>
+                                </div>
+
+                                <div class="col-6 col-md-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" 
+                                               id="asiste_{{ item.fecha_str }}" 
+                                               name="asiste_{{ item.fecha_str }}"
+                                               {% if item.disp.asiste %}checked{% endif %}
+                                               onchange="toggleAsistencia('{{ item.fecha_str }}')">
+                                        <label class="form-check-label fw-semibold" for="asiste_{{ item.fecha_str }}">
+                                            ¿Viajas este día?
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="col-6 col-md-3" id="bloque_conducir_{{ item.fecha_str }}">
+                                    {% if tiene_vehiculo %}
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" 
+                                               id="puede_conducir_{{ item.fecha_str }}" 
+                                               name="puede_conducir_{{ item.fecha_str }}"
+                                               {% if item.disp.puede_conducir %}checked{% endif %}>
+                                        <label class="form-check-label" for="puede_conducir_{{ item.fecha_str }}">
+                                            ¿Puedes conducir?
+                                        </label>
+                                    </div>
+                                    {% else %}
+                                    <span class="text-muted small fst-italic">Sin vehículo propio</span>
+                                    {% endif %}
+                                </div>
+
+                                <div class="col-12 col-md-3" id="bloque_motivo_{{ item.fecha_str }}" 
+                                     style="{% if item.disp.asiste %}display: none;{% endif %}">
+                                    <label class="form-label small text-muted mb-1">Motivo ausencia:</label>
+                                    <select class="form-select form-select-sm" name="motivo_{{ item.fecha_str }}">
+                                        <option value="">Selecciona motivo...</option>
+                                        {% for cod, nombre in motivos_ausencia %}
+                                        <option value="{{ cod }}" {% if item.disp.motivo_ausencia == cod %}selected{% endif %}>
+                                            {{ nombre }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2">
+                        <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">Cancelar</a>
+                        <button type="submit" class="btn btn-primary px-4 fw-bold">
+                            <i class="bi bi-check2-circle"></i> Guardar Disponibilidad
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleAsistencia(fechaStr) {
+    const checkAsiste = document.getElementById('asiste_' + fechaStr);
+    const bloqueMotivo = document.getElementById('bloque_motivo_' + fechaStr);
+    const checkConducir = document.getElementById('puede_conducir_' + fechaStr);
+
+    if (checkAsiste.checked) {
+        bloqueMotivo.style.display = 'none';
+        if (checkConducir) {
+            checkConducir.disabled = false;
+        }
+    } else {
+        bloqueMotivo.style.display = 'block';
+        if (checkConducir) {
+            checkConducir.checked = false;
+            checkConducir.disabled = true;
+        }
+    }
+}
+</script>
+{% endblock %}
