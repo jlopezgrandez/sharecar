@@ -9,7 +9,7 @@ from carpooling.models import (
     Vehiculo, DisponibilidadDiaria, PlanSemanal, AsignacionDia, ViajeVehiculo, PerfilUsuario
 )
 from carpooling.services.disponibilidad import (
-    asegurar_disponibilidades_semana, actualizar_balances_historicos
+    obtener_usuarios_activos, actualizar_balances_historicos
 )
 
 
@@ -55,9 +55,7 @@ class OptimizadorCarpooling:
         Todos los usuarios activos asisten por defecto, salvo que hayan notificado una ausencia.
         """
         # 1. Obtener todos los usuarios activos en el sistema
-        usuarios_activos = list(
-            User.objects.filter(is_active=True, perfil__activo=True).select_related('perfil').prefetch_related('vehiculos')
-        )
+        usuarios_activos = obtener_usuarios_activos()
 
         # Mapeo de ausencias o preferencias notificadas para este día
         disponibilidades_map = {

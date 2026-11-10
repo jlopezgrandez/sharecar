@@ -8,7 +8,9 @@ from .models import (
     Vehiculo, DisponibilidadDiaria, PlanSemanal, AsignacionDia, ViajeVehiculo, PerfilUsuario, DIAS_SEMANA_ES
 )
 from .services.optimizer import OptimizadorCarpooling
-from .services.disponibilidad import asegurar_disponibilidades_semana, actualizar_balances_historicos
+from .services.disponibilidad import (
+    obtener_usuarios_activos, actualizar_balances_historicos
+)
 
 
 def _obtener_lunes_semana(fecha=None):
@@ -39,9 +41,7 @@ def dashboard_cuadrante(request):
     dias_semana = []
     
     # Usuarios activos en el sistema (por defecto viajan todos salvo que notifiquen ausencia)
-    usuarios_activos = list(
-        User.objects.filter(is_active=True, perfil__activo=True).select_related('perfil')
-    )
+    usuarios_activos = obtener_usuarios_activos()
 
     for i in range(5):
         dia_fecha = lunes + timedelta(days=i)
@@ -71,7 +71,7 @@ def dashboard_cuadrante(request):
 
     # Actualizar y cargar estadísticas de equidad global
     actualizar_balances_historicos()
-    perfiles = PerfilUsuario.objects.filter(activo=True).select_related('user').order_by('dias_conducidos')
+    perfiles = PerfilUsuario.objects.filter(activo=True, user__in=usuarios_activos).select_related('user').order_by('dias_conducidos')
 
     context = {
         'lunes': lunes,

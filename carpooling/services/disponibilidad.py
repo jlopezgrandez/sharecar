@@ -5,12 +5,40 @@ from django.contrib.auth.models import User
 from carpooling.models import DisponibilidadDiaria, ViajeVehiculo, AsignacionDia, PerfilUsuario
 
 
+def obtener_usuarios_activos():
+    """
+    Obtiene todos los usuarios activos del sistema para el carpooling.
+    Garantiza que todos tengan su PerfilUsuario creado con activo=True.
+    Si existen usuarios trabajadores además del admin, excluye la cuenta puramente de gestión 'admin'.
+    """
+    todos_activos = list(
+        User.objects.filter(is_active=True)
+        .select_related('perfil')
+        .prefetch_related('vehiculos')
+    )
+
+    # Si hay compañeros además del admin, excluimos el usuario técnico 'admin'
+    if len(todos_activos) > 1:
+        usuarios_candidatos = [u for u in todos_activos if u.username != 'admin']
+    else:
+        usuarios_candidatos = todos_activos
+
+    activos = []
+    for u in usuarios_candidatos:
+        try:
+            perfil = u.perfil
+        except (PerfilUsuario.DoesNotExist, AttributeError):
+            perfil, _ = PerfilUsuario.objects.get_or_create(user=u, defaults={'activo': True})
+            u.perfil = perfil
+
+        if perfil.activo:
+            activos.append(u)
+
+    return activos
+
+
 def asegurar_disponibilidades_semana(lunes):
-    """
-    Función de compatibilidad: ya no se requiere crear registros ficticios en BD,
-    el sistema asume por defecto que todo usuario activo viaja y aporta coche
-    salvo notificación expresa de ausencia.
-    """
+    """Función de compatibilidad."""
     pass
 
 
@@ -37,8 +65,8 @@ def actualizar_balances_historicos():
         ).values_list('usuario_id', 'fecha')
     )
 
-    for perfil in PerfilUsuario.objects.filter(activo=True).select_related('user'):
-        user = perfil.user
+    for user in obtener_usuarios_activos():
+        perfil = user.perfil
 
         # Conducciones reales en planes publicados
         conducidos_planes = ViajeVehiculo.objects.filter(
