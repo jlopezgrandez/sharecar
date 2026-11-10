@@ -90,20 +90,15 @@ def dashboard_cuadrante(request):
 @login_required
 def gestionar_disponibilidad(request):
     """
-    Permite al usuario conectado marcar los días que asiste y si puede conducir.
+    Permite al usuario conectado marcar ausencias y si puede conducir.
+    REGLA: Solo se puede gestionar la SEMANA SIGUIENTE inmediata.
+    No se permite manipular disponibilidad a futuro lejano ni alterar la semana actual en curso.
     """
-    semana_str = request.GET.get('semana')
-    if semana_str:
-        try:
-            lunes = datetime.strptime(semana_str, '%Y-%m-%d').date()
-            lunes = _obtener_lunes_semana(lunes)
-        except ValueError:
-            lunes = _obtener_lunes_semana() + timedelta(days=7) # Por defecto, la próxima semana
-    else:
-        # Por defecto abre la próxima semana para planificar con antelación
-        lunes = _obtener_lunes_semana() + timedelta(days=7)
-
+    # Siempre y exclusivamente la semana siguiente (próximo lunes a viernes)
+    lunes = _obtener_lunes_semana() + timedelta(days=7)
     viernes = lunes + timedelta(days=4)
+
+    tiene_vehiculo = request.user.vehiculos.filter(activo=True).exists()
 
     if request.method == 'POST':
         for i in range(5):
@@ -120,17 +115,19 @@ def gestionar_disponibilidad(request):
                 fecha=dia_fecha,
                 defaults={
                     'asiste': asiste,
-                    'puede_conducir': puede_conducir,
+                    'puede_conducir': puede_conducir if asiste else False,
                     'motivo_ausencia': motivo if not asiste else None,
                     'comentarios': comentarios
                 }
             )
 
-        messages.success(request, f"¡Disponibilidad guardada correctamente para la semana del {lunes.strftime('%d/%m/%Y')}!")
-        return redirect(f"{request.path}?semana={lunes.strftime('%Y-%m-%d')}")
+        messages.success(
+            request, 
+            f"¡Disponibilidad guardada correctamente para la próxima semana (del {lunes.strftime('%d/%m/%Y')} al {viernes.strftime('%d/%m/%Y')})!"
+        )
+        return redirect('gestionar_disponibilidad')
 
-    # Cargar disponibilidades existentes para los 5 días
-    tiene_vehiculo = request.user.vehiculos.filter(activo=True).exists()
+    # Cargar disponibilidades existentes para los 5 días de la próxima semana
     disps_guardadas = {
         d.fecha: d for d in DisponibilidadDiaria.objects.filter(
             usuario=request.user,
