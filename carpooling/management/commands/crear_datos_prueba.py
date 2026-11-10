@@ -47,6 +47,8 @@ class Command(BaseCommand):
                 user.save()
 
             perfil, _ = PerfilUsuario.objects.get_or_create(user=user)
+            perfil.dias_conducidos_base = cond
+            perfil.dias_pasajero_base = pas
             perfil.dias_conducidos = cond
             perfil.dias_pasajero = pas
             perfil.activo = True

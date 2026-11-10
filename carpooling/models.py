@@ -21,6 +21,8 @@ class PerfilUsuario(models.Model):
     activo = models.BooleanField(default=True, verbose_name="Participa activamente")
     
     # Balance histórico para algoritmo de equidad
+    dias_conducidos_base = models.PositiveIntegerField(default=0, verbose_name="Días conducidos (base inicial)")
+    dias_pasajero_base = models.PositiveIntegerField(default=0, verbose_name="Días pasajero (base inicial)")
     dias_conducidos = models.PositiveIntegerField(default=0, verbose_name="Días que ha conducido")
     dias_pasajero = models.PositiveIntegerField(default=0, verbose_name="Días como pasajero")
 

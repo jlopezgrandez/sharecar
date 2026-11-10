@@ -8,6 +8,7 @@ from .models import (
     Vehiculo, DisponibilidadDiaria, PlanSemanal, AsignacionDia, ViajeVehiculo, PerfilUsuario, DIAS_SEMANA_ES
 )
 from .services.optimizer import OptimizadorCarpooling
+from .services.disponibilidad import asegurar_disponibilidades_semana, actualizar_balances_historicos
 
 
 def _obtener_lunes_semana(fecha=None):
@@ -33,6 +34,9 @@ def dashboard_cuadrante(request):
     viernes = lunes + timedelta(days=4)
     semana_anterior = lunes - timedelta(days=7)
     semana_siguiente = lunes + timedelta(days=7)
+
+    # Asegurar que existan disponibilidades por defecto para los usuarios activos en esta semana
+    asegurar_disponibilidades_semana(lunes)
 
     plan = PlanSemanal.objects.filter(semana_inicio=lunes).first()
     dias_semana = []
@@ -92,6 +96,7 @@ def gestionar_disponibilidad(request):
         lunes = _obtener_lunes_semana() + timedelta(days=7)
 
     viernes = lunes + timedelta(days=4)
+    asegurar_disponibilidades_semana(lunes)
 
     if request.method == 'POST':
         for i in range(5):

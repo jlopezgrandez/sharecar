@@ -1,8 +1,9 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
 from datetime import date
-from carpooling.models import Vehiculo, PerfilUsuario, PlanSemanal
+from carpooling.models import Vehiculo, PerfilUsuario, PlanSemanal, AsignacionDia
 from carpooling.services.optimizer import OptimizadorCarpooling
+from carpooling.services.disponibilidad import asegurar_disponibilidades_semana
 
 
 class OptimizadorCarpoolingTestCase(TestCase):
@@ -57,3 +58,31 @@ class OptimizadorCarpoolingTestCase(TestCase):
         # Debe haber elegido los dos de 5 plazas (5+5=10)
         plazas = sorted([c['plazas'] for c in mejor_comb])
         self.assertEqual(plazas, [5, 5])
+
+    def test_optimizacion_semanas_multiples_sin_disponibilidad_previa(self):
+        """
+        Verifica que se pueden generar turnos para varias semanas consecutivas
+        aunque los usuarios no hayan rellenado disponibilidad previamente (se asume disponibles).
+        """
+        # Semana 1
+        res1 = self.optimizador.ejecutar_planificacion_semanal()
+        self.assertEqual(res1['dias_optimizados'], 5)
+
+        for dia in self.plan.dias.all():
+            self.assertEqual(dia.total_viajeros, 9)
+            self.assertEqual(dia.total_coches, 2)
+            self.assertEqual(dia.viajes_vehiculo.count(), 2)
+
+        # Semana 2 (una semana posterior sin datos creados a mano)
+        plan2 = PlanSemanal.objects.create(
+            semana_inicio=date(2026, 11, 9),
+            semana_fin=date(2026, 11, 13)
+        )
+        optimizador2 = OptimizadorCarpooling(plan2)
+        res2 = optimizador2.ejecutar_planificacion_semanal()
+        self.assertEqual(res2['dias_optimizados'], 5)
+
+        for dia in plan2.dias.all():
+            self.assertEqual(dia.total_viajeros, 9)
+            self.assertEqual(dia.total_coches, 2)
+            self.assertEqual(dia.viajes_vehiculo.count(), 2)

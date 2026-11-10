@@ -8,6 +8,9 @@ from django.contrib.auth.models import User
 from carpooling.models import (
     Vehiculo, DisponibilidadDiaria, PlanSemanal, AsignacionDia, ViajeVehiculo, PerfilUsuario
 )
+from carpooling.services.disponibilidad import (
+    asegurar_disponibilidades_semana, actualizar_balances_historicos
+)
 
 
 class OptimizadorCarpooling:
@@ -18,6 +21,9 @@ class OptimizadorCarpooling:
         """
         Ejecuta la optimización para cada uno de los días del plan semanal (Lunes a Viernes).
         """
+        # Asegurar disponibilidades por defecto para todos los usuarios activos
+        asegurar_disponibilidades_semana(self.plan.semana_inicio)
+
         fecha_actual = self.plan.semana_inicio
         fin = self.plan.semana_fin
 
@@ -36,6 +42,9 @@ class OptimizadorCarpooling:
 
             # Avanzar al siguiente día
             fecha_actual += timedelta(days=1)
+
+        # Actualizar balances históricos acumulados de todos los usuarios
+        actualizar_balances_historicos()
 
         return {
             'plan_id': self.plan.id,
