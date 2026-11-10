@@ -35,26 +35,31 @@ def dashboard_cuadrante(request):
     semana_anterior = lunes - timedelta(days=7)
     semana_siguiente = lunes + timedelta(days=7)
 
-    # Asegurar que existan disponibilidades por defecto para los usuarios activos en esta semana
-    asegurar_disponibilidades_semana(lunes)
-
     plan = PlanSemanal.objects.filter(semana_inicio=lunes).first()
     dias_semana = []
     
+    # Usuarios activos en el sistema (por defecto viajan todos salvo que notifiquen ausencia)
+    usuarios_activos = list(
+        User.objects.filter(is_active=True, perfil__activo=True).select_related('perfil')
+    )
+
     for i in range(5):
         dia_fecha = lunes + timedelta(days=i)
         asignacion = None
         if plan:
             asignacion = plan.dias.filter(fecha=dia_fecha).first()
         
-        # Obtener viajeros previstos y ausencias para ese día
+        # Ausencias y excepciones guardadas para este día
         disponibilidades = DisponibilidadDiaria.objects.filter(
             fecha=dia_fecha,
-            usuario__perfil__activo=True
+            usuario__in=usuarios_activos
         ).select_related('usuario', 'usuario__perfil')
 
-        viajeros = [d for d in disponibilidades if d.asiste]
         ausentes = [d for d in disponibilidades if not d.asiste]
+        ausentes_ids = {d.usuario_id for d in ausentes}
+
+        # Viajeros: todos los usuarios activos excepto los ausentes
+        viajeros = [u for u in usuarios_activos if u.id not in ausentes_ids]
 
         dias_semana.append({
             'fecha': dia_fecha,
@@ -64,7 +69,8 @@ def dashboard_cuadrante(request):
             'ausentes': ausentes,
         })
 
-    # Estadísticas de equidad global
+    # Actualizar y cargar estadísticas de equidad global
+    actualizar_balances_historicos()
     perfiles = PerfilUsuario.objects.filter(activo=True).select_related('user').order_by('dias_conducidos')
 
     context = {
@@ -96,7 +102,6 @@ def gestionar_disponibilidad(request):
         lunes = _obtener_lunes_semana() + timedelta(days=7)
 
     viernes = lunes + timedelta(days=4)
-    asegurar_disponibilidades_semana(lunes)
 
     if request.method == 'POST':
         for i in range(5):
@@ -123,16 +128,27 @@ def gestionar_disponibilidad(request):
         return redirect(f"{request.path}?semana={lunes.strftime('%Y-%m-%d')}")
 
     # Cargar disponibilidades existentes para los 5 días
-    dias_form = []
     tiene_vehiculo = request.user.vehiculos.filter(activo=True).exists()
+    disps_guardadas = {
+        d.fecha: d for d in DisponibilidadDiaria.objects.filter(
+            usuario=request.user,
+            fecha__range=[lunes, viernes]
+        )
+    }
 
+    dias_form = []
     for i in range(5):
         dia_fecha = lunes + timedelta(days=i)
-        disp, _ = DisponibilidadDiaria.objects.get_or_create(
-            usuario=request.user,
-            fecha=dia_fecha,
-            defaults={'asiste': True, 'puede_conducir': tiene_vehiculo}
-        )
+        disp = disps_guardadas.get(dia_fecha)
+        if not disp:
+            # Por defecto asiste y puede conducir (no escribe en BD hasta que el usuario guarde)
+            disp = DisponibilidadDiaria(
+                usuario=request.user,
+                fecha=dia_fecha,
+                asiste=True,
+                puede_conducir=tiene_vehiculo
+            )
+
         dias_form.append({
             'fecha': dia_fecha,
             'fecha_str': dia_fecha.strftime('%Y-%m-%d'),

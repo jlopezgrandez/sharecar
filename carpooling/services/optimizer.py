@@ -21,9 +21,6 @@ class OptimizadorCarpooling:
         """
         Ejecuta la optimización para cada uno de los días del plan semanal (Lunes a Viernes).
         """
-        # Asegurar disponibilidades por defecto para todos los usuarios activos
-        asegurar_disponibilidades_semana(self.plan.semana_inicio)
-
         fecha_actual = self.plan.semana_inicio
         fin = self.plan.semana_fin
 
@@ -55,39 +52,50 @@ class OptimizadorCarpooling:
     def _optimizar_dia(self, fecha, conducciones_semana: Dict[int, int]) -> Dict[str, Any]:
         """
         Calcula la selección óptima de vehículos y pasajeros para un día específico.
+        Todos los usuarios activos asisten por defecto, salvo que hayan notificado una ausencia.
         """
-        # 1. Obtener disponibilidades para este día
-        disponibilidades = DisponibilidadDiaria.objects.filter(
-            fecha=fecha,
-            usuario__perfil__activo=True
-        ).select_related('usuario', 'usuario__perfil')
+        # 1. Obtener todos los usuarios activos en el sistema
+        usuarios_activos = list(
+            User.objects.filter(is_active=True, perfil__activo=True).select_related('perfil').prefetch_related('vehiculos')
+        )
+
+        # Mapeo de ausencias o preferencias notificadas para este día
+        disponibilidades_map = {
+            d.usuario_id: d
+            for d in DisponibilidadDiaria.objects.filter(fecha=fecha, usuario__in=usuarios_activos)
+        }
 
         viajeros = []
         candidatos_conductores = []
 
-        for disp in disponibilidades:
-            if disp.asiste:
-                viajeros.append(disp.usuario)
-                
-                # Verificar si puede aportar coche
-                if disp.puede_conducir:
-                    vehiculo = disp.usuario.vehiculos.filter(activo=True).first()
-                    if vehiculo and vehiculo.plazas_totales > 1:
-                        # Calcular score de prioridad de conducción
-                        # Cuanto MENOR sea el score, más prioridad tiene de poner el coche hoy.
-                        perfil = getattr(disp.usuario, 'perfil', None)
-                        ratio_historico = perfil.ratio_aportacion if perfil else 0.0
-                        conducidos_esta_semana = conducciones_semana.get(disp.usuario.id, 0)
-                        
-                        # Penalización alta por haber conducido ya esta misma semana (favorece rotación semanal)
-                        score = (ratio_historico * 10.0) + (conducidos_esta_semana * 50.0)
+        for user in usuarios_activos:
+            disp = disponibilidades_map.get(user.id)
+            # Por defecto asiste, salvo que haya notificado lo contrario
+            asiste = disp.asiste if disp else True
 
-                        candidatos_conductores.append({
-                            'usuario': disp.usuario,
-                            'vehiculo': vehiculo,
-                            'plazas': vehiculo.plazas_totales,
-                            'score': score
-                        })
+            if asiste:
+                viajeros.append(user)
+                
+                # Por defecto puede conducir si tiene coche activo con más de 1 plaza,
+                # salvo que haya notificado que no puede conducir hoy
+                vehiculo = user.vehiculos.filter(activo=True).first()
+                tiene_coche_apto = (vehiculo is not None and vehiculo.plazas_totales > 1)
+                puede_conducir = disp.puede_conducir if disp else tiene_coche_apto
+
+                if puede_conducir and tiene_coche_apto:
+                    perfil = getattr(user, 'perfil', None)
+                    ratio_historico = perfil.ratio_aportacion if perfil else 0.0
+                    conducidos_esta_semana = conducciones_semana.get(user.id, 0)
+                    
+                    # Penalización por ratio acumulado y rotación dentro de la misma semana
+                    score = (ratio_historico * 10.0) + (conducidos_esta_semana * 50.0)
+
+                    candidatos_conductores.append({
+                        'usuario': user,
+                        'vehiculo': vehiculo,
+                        'plazas': vehiculo.plazas_totales,
+                        'score': score
+                    })
 
         total_viajeros = len(viajeros)
 

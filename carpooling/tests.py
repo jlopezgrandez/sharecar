@@ -1,14 +1,13 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
 from datetime import date
-from carpooling.models import Vehiculo, PerfilUsuario, PlanSemanal, AsignacionDia
+from carpooling.models import Vehiculo, PerfilUsuario, PlanSemanal, AsignacionDia, DisponibilidadDiaria
 from carpooling.services.optimizer import OptimizadorCarpooling
-from carpooling.services.disponibilidad import asegurar_disponibilidades_semana
 
 
 class OptimizadorCarpoolingTestCase(TestCase):
     def setUp(self):
-        # Crear 9 usuarios
+        # Crear 9 usuarios activos
         self.usuarios = []
         for i in range(1, 10):
             u = User.objects.create_user(username=f'user{i}', password='password')
@@ -50,39 +49,55 @@ class OptimizadorCarpoolingTestCase(TestCase):
         )
 
         self.assertIsNotNone(mejor_comb)
-        # Debe usar exactamente 2 coches
         self.assertEqual(len(mejor_comb), 2)
-        # La capacidad total debe ser al menos 9
         capacidad = sum(c['plazas'] for c in mejor_comb)
         self.assertGreaterEqual(capacidad, 9)
-        # Debe haber elegido los dos de 5 plazas (5+5=10)
         plazas = sorted([c['plazas'] for c in mejor_comb])
         self.assertEqual(plazas, [5, 5])
 
-    def test_optimizacion_semanas_multiples_sin_disponibilidad_previa(self):
+    def test_optimizacion_sin_disponibilidad_previa(self):
         """
-        Verifica que se pueden generar turnos para varias semanas consecutivas
-        aunque los usuarios no hayan rellenado disponibilidad previamente (se asume disponibles).
+        Verifica que se pueden generar turnos para cualquier semana
+        SIN necesidad de que ningún usuario haya entrado a 'Mi Disponibilidad'.
+        Por defecto, todos los usuarios activos viajan y aportan coche.
         """
-        # Semana 1
-        res1 = self.optimizador.ejecutar_planificacion_semanal()
-        self.assertEqual(res1['dias_optimizados'], 5)
+        # No hay ningún registro en DisponibilidadDiaria
+        self.assertEqual(DisponibilidadDiaria.objects.count(), 0)
+
+        # Generar plan
+        res = self.optimizador.ejecutar_planificacion_semanal()
+        self.assertEqual(res['dias_optimizados'], 5)
 
         for dia in self.plan.dias.all():
             self.assertEqual(dia.total_viajeros, 9)
             self.assertEqual(dia.total_coches, 2)
             self.assertEqual(dia.viajes_vehiculo.count(), 2)
 
-        # Semana 2 (una semana posterior sin datos creados a mano)
-        plan2 = PlanSemanal.objects.create(
-            semana_inicio=date(2026, 11, 9),
-            semana_fin=date(2026, 11, 13)
-        )
-        optimizador2 = OptimizadorCarpooling(plan2)
-        res2 = optimizador2.ejecutar_planificacion_semanal()
-        self.assertEqual(res2['dias_optimizados'], 5)
+    def test_notificacion_ausencia_y_recalculo(self):
+        """
+        Si un usuario notifica ausencia (ej. vacaciones), el optimizador
+        lo excluye de los viajeros y ajusta los vehículos.
+        """
+        lunes = date(2026, 11, 2)
 
-        for dia in plan2.dias.all():
-            self.assertEqual(dia.total_viajeros, 9)
-            self.assertEqual(dia.total_coches, 2)
-            self.assertEqual(dia.viajes_vehiculo.count(), 2)
+        # User1 notifica que no asiste el lunes por vacaciones
+        DisponibilidadDiaria.objects.create(
+            usuario=self.usuarios[0],
+            fecha=lunes,
+            asiste=False,
+            motivo_ausencia='VACACIONES'
+        )
+
+        res = self.optimizador.ejecutar_planificacion_semanal()
+        self.assertEqual(res['dias_optimizados'], 5)
+
+        asignacion_lunes = self.plan.dias.get(fecha=lunes)
+        # Solo viajan 8 personas el lunes
+        self.assertEqual(asignacion_lunes.total_viajeros, 8)
+        # User1 no debe ser conductor el lunes
+        conductores_lunes = [v.conductor for v in asignacion_lunes.viajes_vehiculo.all()]
+        self.assertNotIn(self.usuarios[0], conductores_lunes)
+
+        # En los demás días viajan 9 personas
+        asignacion_martes = self.plan.dias.get(fecha=date(2026, 11, 3))
+        self.assertEqual(asignacion_martes.total_viajeros, 9)
