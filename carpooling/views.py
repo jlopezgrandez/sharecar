@@ -72,6 +72,7 @@ def dashboard_cuadrante(request):
     # Actualizar y cargar estadísticas de equidad global
     actualizar_balances_historicos()
     perfiles = PerfilUsuario.objects.filter(activo=True, user__in=usuarios_activos).select_related('user').order_by('dias_conducidos')
+    total_vehiculos_activos = Vehiculo.objects.filter(activo=True).count()
 
     context = {
         'lunes': lunes,
@@ -81,6 +82,7 @@ def dashboard_cuadrante(request):
         'plan': plan,
         'dias_semana': dias_semana,
         'perfiles': perfiles,
+        'total_vehiculos_activos': total_vehiculos_activos,
     }
     return render(request, 'carpooling/dashboard.html', context)
 
@@ -194,10 +196,25 @@ def generar_plan_semanal(request):
         optimizador = OptimizadorCarpooling(plan)
         resultado = optimizador.ejecutar_planificacion_semanal()
 
-        messages.success(
-            request,
-            f"Plan semanal generado con éxito para la semana del {lunes.strftime('%d/%m/%Y')}. Se optimizaron {resultado['dias_optimizados']} días."
-        )
+        detalles = resultado.get('detalles', [])
+        total_viajeros_semana = sum(d.get('total_viajeros', 0) for d in detalles)
+        total_coches_semana = sum(d.get('total_coches', 0) for d in detalles)
+
+        if total_viajeros_semana == 0:
+            messages.warning(
+                request,
+                f"No hay usuarios activos registrados para viajar en la semana del {lunes.strftime('%d/%m/%Y')}."
+            )
+        elif total_coches_semana == 0:
+            messages.error(
+                request,
+                f"Hay personas disponibles para viajar ({total_viajeros_semana} viajes esta semana), pero no hay ningún vehículo disponible/activo para asignar."
+            )
+        else:
+            messages.success(
+                request,
+                f"¡Plan semanal generado con éxito para la semana del {lunes.strftime('%d/%m/%Y')}! Se asignaron vehículos para los {resultado['dias_optimizados']} días."
+            )
         return redirect(f"/?semana={lunes.strftime('%Y-%m-%d')}")
 
     return redirect('/')

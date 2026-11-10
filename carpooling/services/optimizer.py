@@ -24,8 +24,8 @@ class OptimizadorCarpooling:
         fecha_actual = self.plan.semana_inicio
         fin = self.plan.semana_fin
 
-        # Contador de veces que ha conducido cada usuario DENTRO de esta misma semana
-        conducciones_semana = {u.id: 0 for u in User.objects.filter(perfil__activo=True)}
+        usuarios_activos = obtener_usuarios_activos()
+        conducciones_semana = {u.id: 0 for u in usuarios_activos}
 
         resultados_dias = []
 
@@ -37,7 +37,6 @@ class OptimizadorCarpooling:
             for conductor_id in res_dia.get('conductores_asignados', []):
                 conducciones_semana[conductor_id] = conducciones_semana.get(conductor_id, 0) + 1
 
-            # Avanzar al siguiente día
             fecha_actual += timedelta(days=1)
 
         # Actualizar balances históricos acumulados de todos los usuarios
@@ -54,7 +53,6 @@ class OptimizadorCarpooling:
         Calcula la selección óptima de vehículos y pasajeros para un día específico.
         Todos los usuarios activos asisten por defecto, salvo que hayan notificado una ausencia.
         """
-        # 1. Obtener todos los usuarios activos en el sistema
         usuarios_activos = obtener_usuarios_activos()
 
         # Mapeo de ausencias o preferencias notificadas para este día
@@ -81,8 +79,8 @@ class OptimizadorCarpooling:
                 puede_conducir = disp.puede_conducir if disp else tiene_coche_apto
 
                 if puede_conducir and tiene_coche_apto:
-                    perfil = getattr(user, 'perfil', None)
-                    ratio_historico = perfil.ratio_aportacion if perfil else 0.0
+                    perfil, _ = PerfilUsuario.objects.get_or_create(user=user, defaults={'activo': True})
+                    ratio_historico = perfil.ratio_aportacion
                     conducidos_esta_semana = conducciones_semana.get(user.id, 0)
                     
                     # Penalización por ratio acumulado y rotación dentro de la misma semana
@@ -97,7 +95,7 @@ class OptimizadorCarpooling:
 
         total_viajeros = len(viajeros)
 
-        # Crear o limpiar registro AsignacionDia
+        # Crear o actualizar registro AsignacionDia
         asignacion_dia, _ = AsignacionDia.objects.update_or_create(
             plan=self.plan,
             fecha=fecha,
@@ -109,7 +107,7 @@ class OptimizadorCarpooling:
         # Limpiar viajes previos si se está regenerando
         asignacion_dia.viajes_vehiculo.all().delete()
 
-        # Si nadie viaja o solo viaja 1 persona sin coche
+        # Si nadie viaja
         if total_viajeros == 0:
             return {
                 'fecha': fecha,
@@ -118,7 +116,7 @@ class OptimizadorCarpooling:
                 'conductores_asignados': []
             }
 
-        # 2. Algoritmo de selección de vehículos óptimos
+        # Algoritmo de selección de vehículos óptimos
         mejor_combinacion = self._encontrar_mejor_combinacion_coches(
             candidatos=candidatos_conductores,
             pasajeros_necesarios=total_viajeros
@@ -150,13 +148,16 @@ class OptimizadorCarpooling:
 
             asignacion_dia.total_coches = len(mejor_combinacion)
             asignacion_dia.save()
+        else:
+            asignacion_dia.total_coches = 0
+            asignacion_dia.save()
 
         return {
             'fecha': fecha,
             'total_viajeros': total_viajeros,
             'total_coches': len(mejor_combinacion) if mejor_combinacion else 0,
             'conductores_asignados': conductores_ids,
-            'sin_plazas_suficientes': (mejor_combinacion is None)
+            'sin_plazas_suficientes': (len(mejor_combinacion) == 0 and total_viajeros > 0)
         }
 
     def _encontrar_mejor_combinacion_coches(
@@ -165,19 +166,19 @@ class OptimizadorCarpooling:
         """
         Encuentra el conjunto de vehículos que:
         1. Minimiza el número total de coches necesarios (sum(plazas) >= pasajeros_necesarios).
-        2. Minimiza el exceso de plazas sobrantes (ej. 5+5 es mejor que 5+7 si se necesitan 9).
+        2. Minimiza el exceso de plazas sobrantes.
         3. Minimiza la suma de scores de equidad (prioriza a quienes han conducido menos).
+        Si no hay suficientes plazas para todos, usa todos los coches disponibles en vez de fallar a 0.
         """
         if not candidatos:
-            return None
+            return []
 
         capacidad_max_posible = sum(c['plazas'] for c in candidatos)
-        if capacidad_max_posible < pasajeros_necesarios:
-            # No hay suficientes plazas ni usando todos los coches disponibles
-            return None
+        if capacidad_max_posible <= pasajeros_necesarios:
+            # Si no sobran plazas, usamos todos los vehículos disponibles
+            return list(candidatos)
 
-        # Evaluamos combinaciones de tamaño 1, 2, 3... hasta len(candidatos)
-        # El primer tamaño k que logre cubrir a los pasajeros garantiza el MÍNIMO número de coches.
+        # Si hay plazas de sobra, buscamos la combinación que use el menor número de coches posible
         for tamano_k in range(1, len(candidatos) + 1):
             combinaciones_validas = []
 
@@ -186,16 +187,11 @@ class OptimizadorCarpooling:
                 if capacidad_total >= pasajeros_necesarios:
                     exceso_plazas = capacidad_total - pasajeros_necesarios
                     score_equidad = sum(c['score'] for c in comb)
-                    
-                    # Criterio de orden:
-                    # 1. Menor exceso de plazas (más ajustado a la capacidad requerida)
-                    # 2. Menor score de equidad (conduce quien más lo debe)
                     combinaciones_validas.append((exceso_plazas, score_equidad, comb))
 
             if combinaciones_validas:
-                # Ordenar por (menor exceso, menor score)
                 combinaciones_validas.sort(key=lambda x: (x[0], x[1]))
                 mejor = combinaciones_validas[0][2]
                 return list(mejor)
 
-        return None
+        return list(candidatos)

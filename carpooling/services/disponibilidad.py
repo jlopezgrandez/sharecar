@@ -2,37 +2,33 @@
 Servicios auxiliares para gestión de disponibilidad y cálculo de balances de equidad.
 """
 from django.contrib.auth.models import User
-from carpooling.models import DisponibilidadDiaria, ViajeVehiculo, AsignacionDia, PerfilUsuario
+from carpooling.models import DisponibilidadDiaria, ViajeVehiculo, AsignacionDia, PerfilUsuario, Vehiculo
 
 
 def obtener_usuarios_activos():
     """
     Obtiene todos los usuarios activos del sistema para el carpooling.
     Garantiza que todos tengan su PerfilUsuario creado con activo=True.
-    Si existen usuarios trabajadores además del admin, excluye la cuenta puramente de gestión 'admin'.
     """
-    todos_activos = list(
+    usuarios = list(
         User.objects.filter(is_active=True)
-        .select_related('perfil')
         .prefetch_related('vehiculos')
     )
 
-    # Si hay compañeros además del admin, excluimos el usuario técnico 'admin'
-    if len(todos_activos) > 1:
-        usuarios_candidatos = [u for u in todos_activos if u.username != 'admin']
-    else:
-        usuarios_candidatos = todos_activos
-
     activos = []
-    for u in usuarios_candidatos:
-        try:
-            perfil = u.perfil
-        except (PerfilUsuario.DoesNotExist, AttributeError):
-            perfil, _ = PerfilUsuario.objects.get_or_create(user=u, defaults={'activo': True})
-            u.perfil = perfil
-
+    for u in usuarios:
+        perfil, _ = PerfilUsuario.objects.get_or_create(user=u, defaults={'activo': True})
         if perfil.activo:
             activos.append(u)
+
+    # Si hay varios usuarios y el usuario 'admin' no tiene coche registrado,
+    # excluimos 'admin' de los viajeros cotidianos
+    if len(activos) > 1:
+        admin_sin_coche = [
+            u for u in activos 
+            if u.username == 'admin' and not u.vehiculos.filter(activo=True).exists()
+        ]
+        activos = [u for u in activos if u not in admin_sin_coche]
 
     return activos
 
@@ -66,7 +62,7 @@ def actualizar_balances_historicos():
     )
 
     for user in obtener_usuarios_activos():
-        perfil = user.perfil
+        perfil, _ = PerfilUsuario.objects.get_or_create(user=user, defaults={'activo': True})
 
         # Conducciones reales en planes publicados
         conducidos_planes = ViajeVehiculo.objects.filter(

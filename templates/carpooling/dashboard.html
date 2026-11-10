@@ -36,6 +36,22 @@
     </div>
 </div>
 
+{% if perfiles and total_vehiculos_activos == 0 %}
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-4 shadow-sm" role="alert">
+    <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+    <div>
+        <strong>Atención:</strong> No hay ningún vehículo activo registrado en el sistema. Entra en <strong><a href="{% url 'mis_vehiculos' %}" class="alert-link">Mis Vehículos</a></strong> para dar de alta coches y sus plazas disponibles.
+    </div>
+</div>
+{% elif not perfiles %}
+<div class="alert alert-info d-flex align-items-center gap-2 mb-4 shadow-sm" role="alert">
+    <i class="bi bi-info-circle-fill fs-5"></i>
+    <div>
+        <strong>Sin usuarios activos:</strong> No se han detectado usuarios activos en el sistema. Asegúrate de dar de alta compañeros desde el <a href="/admin/auth/user/" class="alert-link" target="_blank">Panel de Administración</a>.
+    </div>
+</div>
+{% endif %}
+
 <!-- Días de la semana -->
 <div class="row g-4 mb-5">
     {% for dia in dias_semana %}
